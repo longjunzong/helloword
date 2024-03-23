@@ -15,6 +15,9 @@ class AStar:
         self.heuristic_type = heuristic_type
         self.x_range = 200  # size of background
         self.y_range = 200
+        self.gds = None
+        self.my_gds =None
+        self.gds_pos=None
         self.motions = [(-1, 0), (0, 1),
                         (1, 0), (0, -1)]
         self.obs_type = obs_type
@@ -24,7 +27,7 @@ class AStar:
         self.PARENT = dict()  # recorded parent
         self.g = dict()  # cost to come
 
-    def searching(self):
+    def searching(self,is_seek_gds): #is_seek_gds为True表示是为了寻找gds
         """
         A_star Searching.
         :return: path, visited order
@@ -36,6 +39,7 @@ class AStar:
         self.g.clear()
         self.g[self.s_start] = 0
         self.g[self.s_goal] = math.inf
+
         self.OPEN.clear()
         heapq.heappush(self.OPEN,  # 一个小顶堆，param1: 小顶堆的list，param2: 入堆元素(A,(B,C))，如果要去点(B,C),则最终到终点的代价是A
                        (self.f_value(self.s_start), self.s_start))
@@ -44,7 +48,8 @@ class AStar:
             _, s = heapq.heappop(self.OPEN)
             self.CLOSED.append(s)
 
-            if s == self.s_goal:  # stop condition
+            if s == self.s_goal or (is_seek_gds and self.gds[s[0]][s[1]]!=0 and not self.my_gds[self.gds_pos[s]].is_reserved):  # stop condition
+                self.s_goal=s
                 break
 
             for s_n in self.get_neighbor(s):

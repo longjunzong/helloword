@@ -8,7 +8,7 @@ import heapq
 
 import search
 from roles import Robot, Berth, Boat, Goods
-from utils import one_step, find_neighbors,obs_map
+from utils import one_step, find_neighbors
 
 
 # 机器人相关
@@ -29,6 +29,7 @@ astar = search.AStar()
 N = 210
 gds = [[0 for _ in range(N)] for _ in range(N)]
 my_gds = []
+gds_pos ={}
 
 
 # 码头相关
@@ -170,6 +171,8 @@ def boat_transport(zhenshu):
 
 
 def substract_gds_id(g_id):
+    global gds_pos
+    global robot
     for item in robot:
         if item.goods_idx > g_id:
             item.goods_idx -= 1
@@ -180,6 +183,9 @@ def substract_gds_id(g_id):
                 j -= 1
             elif j == g_id:
                 item.cant_get_goods.remove(j)
+    for k,v in gds_pos.items():
+        if v>g_id:
+            gds_pos[k]-=1
 
 
 def Init():
@@ -208,6 +214,9 @@ def Init():
         berth_pos[id] = (berth_list[1], berth_list[2])
     boat_capacity = int(input())
     astar.ch = ch
+    astar.gds=gds
+    astar.my_gds=my_gds
+    astar.gds_pos=gds_pos
     set_optiom_berth()
     for i in range(5):
         instruction_list.append("ship " + str(i) + " " + str(prior_berth[i]))
@@ -239,12 +248,14 @@ def Input():
     global the_last
     global berth_pos
     global last_berth
+    global gds_pos
     id, money = map(int, input().split(" "))
     num = int(input())
     for i in range(num):
         x, y, val = map(int, input().split())
         good = Goods(x, y, val, a_star=astar, birthday=id)
         good.choose_berth(berth_pos, [_ for _ in range(10)] if the_last else last_berth)
+        gds_pos[(x, y)] = len(my_gds)
         my_gds.append(good)
         gds[x][y] = val
     for i in range(robot_num):
@@ -256,7 +267,7 @@ def Input():
     okk = input()
     for i, item in enumerate(my_gds):
         item.TTL = 1000 - id + item.birthday
-        if item.TTL == 0:
+        if item.TTL <= 0:
             my_gds.pop(i)
             substract_gds_id(i)
             gds[item.x][item.y] = 0
@@ -332,35 +343,38 @@ def try_to_move(robot_id, zhen):
     global the_last
     global last_berth
     global berth_pos
+    global gds_pos
     one_robot = robot[robot_id]
     x, y = one_robot.x, one_robot.y
     destx, desty = one_robot.path[-1]
     if one_robot.goods == 0:
-        if destx <= x <= destx + 3 and desty <= y <= desty + 3:  # pull成功
-            if (destx, desty) in berth_pos:
-                one_robot.cost = 1
-                one_robot.goods_idx = -999
-                berth[one_robot.berth_index].inventory += 1
-            one_robot.choose_goods(my_gds)  # 选一条路，若get失败，则只能选自己脚下，若pull成功或其他情况则可以正常选
-            # with open("test.txt", "a") as f:
-            #    f.writelines(
-            #        str((zhen, robot_id, one_robot.berth_index, berth[one_robot.berth_index].inventory)) + "\n")
-        elif (x, y) == (destx, desty) and (destx, desty) not in berth_pos and gds[x][y] != 0:  # get失败，重新get
-            instruction_list.append("get " + str(robot_id))
+        if (x, y) == (destx, desty) and (destx, desty) not in berth_pos:
+            if gds[x][y] != 0:  # get失败，重新get
+                instruction_list.append("get " + str(robot_id))
+            else:
+                one_robot.choose_goods(my_gds, gds_pos)
+        elif destx <= x <= destx + 3 and desty <= y <= desty + 3 and (destx, desty) in berth_pos:  # pull成功
+            one_robot.cost = 1
+            one_robot.goods_idx = -999
+            berth[one_robot.berth_index].inventory += 1
+            one_robot.choose_goods(my_gds,gds_pos)  # 选一条路，若get失败，则只能选自己脚下，若pull成功或其他情况则可以正常选
+
+
     else:
         if (destx, desty) == (x, y) and (destx, desty) not in berth_pos and gds[x][y] != 0:  # get成功，修改路径至港口，把货物移除
             g_id = one_robot.goods_idx
             one_robot.choose_berth(berth_pos,
                                    [h for h in range(10)] if the_last else last_berth)
             my_gds.pop(g_id)
+            del gds_pos[(x,y)]
             substract_gds_id(g_id)
             get_gds += gds[x][y]
             gds[x][y] = 0
         elif destx <= x <= destx + 3 and desty <= y <= desty + 3 and (destx, desty) in berth_pos:  # pull失败，重新pull
             instruction_list.append("pull " + str(robot_id))
     destx, desty = one_robot.path[-1] if len(one_robot.path) > 0 else (x, y)
-    with open("path.txt", "a") as f:
-      f.writelines(str(zhen) + "--" + str(robot_id) + "---" + str(one_robot.path) + "\n\n")
+    #with open("path.txt", "a") as f:
+    #  f.writelines(str(zhen) + "--" + str(robot_id) + "---" + str(one_robot.path) + "\n\n")
     if len(one_robot.path) > 0 and (destx, desty) != (x, y):  # 走下一步，若get失败不通过if条件，pull失败会让机器人继续在港口里走
         path, good_id = one_robot.path, one_robot.goods_idx
         newx, newy = path[path.index((x, y)) + 1]
@@ -425,17 +439,18 @@ def main():
     for zhen in range(1, 15001):
         id = Input()
         boat_transport(id)
-        with open("robot_pos.txt", "a") as f:
-          e = []
-          for i in robot:
-              e.append((id, i.x, i.y,i.berth_index,len(i.can_reach_berth),
-                        len(i.path[i.path.index((i.x, i.y)) if len(i.path) > 0 else 0:]), i.goods_idx, i.goods))
-          f.writelines(str(e) + "\n")
-        # with open("goods_list.txt", "a") as f:
-        #   e = []
-        #   for i, m in enumerate(my_gds):
-        #       e.append((i, m.x, m.y,m.cost,m.path, m.is_reserved))
-        #   f.writelines(str(id) + "--" + str(e) + "\n")
+        #with open("robot_pos.txt", "a") as f:
+        #  e = []
+        #  for i in robot:
+        #      e.append((id, i.x, i.y,i.berth_index,len(i.can_reach_berth),
+        #                len(i.path[i.path.index((i.x, i.y)) if len(i.path) > 0 else 0:]), i.goods_idx, i.goods))
+        #  f.writelines(str(e) + "\n")
+        #with open("goods_list.txt", "a") as f:
+        #    e = []
+        #    for i, m in enumerate(my_gds):
+        #        e.append((i, m.x, m.y,m.TTL, m.is_reserved))
+        #    f.writelines(str(id) + "--" + str(e) + "\n")
+        #    f.writelines(str(gds_pos)+"\n")
         # with open("my_order.txt", "a") as f:
         #    f.writelines(str(zhen) + "--" + str(my_robot_order) + "\n")
         # with open("berth.txt", "a") as f:
@@ -445,8 +460,8 @@ def main():
         #    f.writelines(str(id) + "--" + str(e) + "\n")
         #with open("goods.txt", "a") as f:
         #    f.writelines(str(id) + "--" + str(get_gds) + "\n")
-        # with open("map1_berth.txt", "w") as f:
-        #   f.writelines(str(berth_pos) + "\n")
+        #with open("map3_berth.txt", "w") as f:
+        #  f.writelines(str(berth_pos) + "\n")
         e = []
         if id + MIN_TRANSPORT_TIME > 14497 and the_last:
             the_last = False

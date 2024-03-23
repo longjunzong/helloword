@@ -16,8 +16,8 @@ class Robot:
         self.can_reach_berth=[] #该船可到达的港口下标
         self.cant_get_goods=[]
 
-    def choose_goods(self, goods_list):
-        self.aStar.s_goal = (self.x, self.y)
+    def choose_goods(self, goods_list,goods_pos):
+        self.aStar.s_start = (self.x, self.y)
         value_estimate = []
         for i, good in enumerate(goods_list):
             if not good.is_reserved and good.nearby_berth[0] in self.can_reach_berth and i not in self.cant_get_goods:
@@ -25,7 +25,7 @@ class Robot:
                 #   h=len(good.path)
                 #else:
                 h = abs(good.x - self.x) + abs(good.y - self.y) + 1
-                if good.TTL > h + 5:
+                if good.TTL > h + 15:
                     value = -good.val / (h + good.cost)
                     heapq.heappush(value_estimate, (value, i,good.nearby_berth, good.x, good.y))
         if len(value_estimate) > 0:
@@ -41,13 +41,15 @@ class Robot:
                 #        path1.reverse()
                 #        path.extend(path1[1:])
                 if optim[0] < self.cost-1:
-                    self.aStar.s_start = (optim[-2], optim[-1])
-                    path = self.aStar.searching()
+                    self.aStar.s_goal = (optim[-2], optim[-1])
+                    path = self.aStar.searching(True)
                     if len(path)>0:
-                        goods_list[optim[1]].is_reserved = True
-                        if self.goods == 0 and self.goods_idx != -999:
-                            goods_list[self.goods_idx].is_reserved = False
-                        self.cost, self.path, self.goods_idx = optim[0], path, optim[1]
+                        path.reverse()
+                        idx = goods_pos[path[-1]]
+                        goods_list[idx].is_reserved = True
+                        #if self.goods == 0 and self.goods_idx != -999:
+                        #    goods_list[self.goods_idx].is_reserved = False
+                        self.cost, self.path, self.goods_idx = optim[0], path, idx
                     else:
                         self.cant_get_goods.append(optim[1])
 
@@ -68,7 +70,7 @@ class Robot:
             while len(path) == 0 and len(value_estimate) > 0:
                 optim = heapq.heappop(value_estimate)
                 self.aStar.s_start = optim[-1]
-                path = self.aStar.searching()
+                path = self.aStar.searching(False)
                 if len(path) > 0:
                     self.berth_index, self.path = optim[1], path
 
